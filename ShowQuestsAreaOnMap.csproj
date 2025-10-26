@@ -631,6 +631,7 @@
     <ItemGroup>
         <Compile Include="ModBehaviour.cs" />
         <Compile Include="Properties\AssemblyInfo.cs"/>
+        <Compile Include="QuestsAreaManager.cs" />
         <Compile Include="QuestSpawnPatcher.cs" />
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>

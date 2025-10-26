@@ -1,44 +1,42 @@
 using System;
 using System.Collections.Generic;
 using Duckov.MiniMaps.UI;
-using Duckov.Quests;
-using Duckov.Quests.Tasks;
 using Duckov.Scenes;
 using Duckov.UI;
-using System.Reflection;
 using Duckov.MiniMaps;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using HarmonyLib;
-using System.Linq;
-using Unity.VisualScripting;
 
 namespace ShowQuestsAreaOnMap
 {
     public class ModBehaviour : Duckov.Modding.ModBehaviour
     {
-        private bool _mapActive = false;
+        private bool _mapActive;
         private HashSet<GameObject> _questCircleObjects = new HashSet<GameObject>();
         private Harmony _harmony;
         public static ModBehaviour Instance { get; private set; }
-        
-        private static Dictionary<Type, FieldInfo> _mapElementFieldCache = new Dictionary<Type, FieldInfo>();
-        
         private const string LogPrefix = "[ShowQuestsAreaOnMap] ";
+        
+        private QuestsAreaManager _areaManager;
+        
 
         private void Awake()
         {
-            if (Instance != null && Instance != this)
-            {
-                Debug.LogWarning(LogPrefix + "侦测到重复的 Mod 实例，已销毁。");
-                Destroy(this.gameObject);
-                return;
-            }
+            if (Instance != null && Instance != this) { Destroy(this.gameObject); return; }
             Instance = this;
             _harmony = new Harmony("com.yexiao.ShowQuestsAreaOnMap");
             
-            
-            Debug.Log(LogPrefix + "Mod 初始化完成!");
+            _areaManager = FindObjectOfType<QuestsAreaManager>();
+            if (_areaManager == null)
+            {
+                _areaManager = gameObject.AddComponent<QuestsAreaManager>();
+                Debug.Log(LogPrefix + "创建了 QuestsAreaManager 组件。");
+            } else {
+                Debug.Log(LogPrefix + "找到了已存在的 QuestsAreaManager 组件。");
+            }
+
+            Debug.Log(LogPrefix + "Mod 初始化完成。");
         }
 
         private void ClearCircle()
@@ -53,151 +51,28 @@ namespace ShowQuestsAreaOnMap
             }
             _questCircleObjects.Clear();
         }
-
-        private void ScanQuestObjectives()
+        private void DrawCircles()
         {
-            Debug.Log(LogPrefix + "开始扫描任务目标...");
-            if (QuestManager.Instance == null)
+            Debug.Log(LogPrefix + "DrawCircles 调用。");
+            ClearCircle(); // 清理旧圈
+
+            if (_areaManager == null || _areaManager.CurrentQuestLocations == null)
             {
-                Debug.LogError(LogPrefix + "QuestManager.Instance 为 null，扫描中止。");
+                Debug.LogError(LogPrefix + "区域管理器或其位置列表为 null！无法绘制。");
                 return;
             }
-            
-            QuestSpawnPatcher.RescanAndClear();
-            
-            string currentMapId = LevelManager.GetCurrentLevelInfo().sceneName;
-            Debug.Log(LogPrefix+$"地图ID：{currentMapId}");
-            if (string.IsNullOrEmpty(currentMapId))
-            {
-                Debug.LogWarning(LogPrefix + "无法获取当前地图 ID，扫描中止。");
-                return;
-            }
-            
-            List<ActiveQuestSpawn> spawnsToDraw = new List<ActiveQuestSpawn>();
-            
-            foreach (Quest quest in QuestManager.Instance.ActiveQuests)
-            {
-                if (quest.RequireSceneInfo == null || quest.RequireSceneInfo.ID != currentMapId) continue;
-                
-                foreach (var task in quest.Tasks)
-                {
-                    if (task == null || task.IsFinished()) continue;
-
-                    MapElementForTask mapElement = null;
-                    float taskRadius = 10f; 
-                    Vector3? taskPosition = null; 
-                    string questName = quest.DisplayName; 
-                    
-                    try
-                    {
-                        mapElement = GetMapElementFromTask(task);
-
-                        if (mapElement != null) 
-                        {
-                            if (mapElement.locations != null && mapElement.locations.Count > 0)
-                            {
-                                foreach (MultiSceneLocation loc in mapElement.locations)
-                                {
-                                    if (loc.IsUnityNull() && loc.TryGetLocationPosition(out Vector3 pos))
-                                    {
-                                        taskPosition = pos; 
-                                        taskRadius = mapElement.range;
-                                        Debug.Log(LogPrefix + $"[静态 MapElement] 找到 '{questName}' @ {taskPosition.Value}");
-                                        break; 
-                                    }
-                                }
-                            }
-                        }
-                        
-                        else if (task is QuestTask_TaskEvent eventTaskNoMapElement) 
-                        {
-                            
-                            if (QuestSpawnPatcher.TaskEventEmitterEventKeyField != null)
-                            {
-                                string targetKey = eventTaskNoMapElement.EventKey;
-                                
-                                TaskEventEmitter[] allEmitters = UnityEngine.Object.FindObjectsOfType<TaskEventEmitter>();
-                                // Debug.Log(LogPrefix + $"... 全局查找 {allEmitters.Length} 个 Emitter for key '{targetKey}'...");
-                                
-                                foreach(var emitter in allEmitters)
-                                {
-                                     if (emitter == null) continue;
-                                     try
-                                     {
-                                         string emitterKey =
-                                             (string)QuestSpawnPatcher.TaskEventEmitterEventKeyField.GetValue(emitter);
-                                         if (emitterKey == targetKey)
-                                         {
-                                             taskPosition = emitter.transform.position;
-                                             Debug.Log(LogPrefix +
-                                                       $"[TaskEvent Emitter] 找到匹配 Emitter '{emitter.name}' @ {taskPosition.Value} for task '{questName}'");
-                                             break;
-                                         }
-                                     }
-                                     catch (Exception ex)
-                                     {
-                                         Debug.Log(LogPrefix+$"比较emitterKey和现有eventTaskNoMapElement出问题了：{ex}");
-                                     }
-                                }
-                                if (!taskPosition.HasValue)
-                                {
-                                     Debug.LogWarning(LogPrefix + $"[静态 TaskEvent Emitter] 未找到 key 为 '{targetKey}' 的 Emitter for task '{questName}'");
-                                }
-                            }
-                            else { Debug.LogError(LogPrefix + "[静态 TaskEvent 查找] TaskEventEmitter key 字段反射失败，无法查找 Emitter。"); }
-                            Debug.Log(LogPrefix + $"[静态 TaskEvent Transform] 找到 '{questName}' @ {taskPosition.Value}");
-                        }
-                        
-                    }
-                    catch (Exception e) { Debug.LogError(LogPrefix + $"扫描任务 '{task.GetType().Name}' ('{questName}') 时出错: {e.Message}"); }
-                    
-                    if (taskPosition.HasValue) 
-                    {
-                        spawnsToDraw.Add(new ActiveQuestSpawn {
-                            AssociatedTask = task, 
-                            QuestName = questName,
-                            Position = taskPosition.Value,
-                            Radius = taskRadius > 10f ? taskRadius : 10f, 
-                            SceneID = currentMapId 
-                        });
-                    }
-                    
-                } 
-            } 
-            
-            foreach (var spawn in QuestSpawnPatcher.ActiveSpawns)
-            {
-                Debug.Log(LogPrefix + $"[新加入]spawn.SceneID:{spawn.SceneID} | currentMapId:{currentMapId}");
-                if (spawn.SceneID == currentMapId)
-                {
-                    spawnsToDraw.Add(spawn);
-                }
-            }
-            
-            int oldCirclesDrawn = 0;
-            ClearCircle(); 
-            foreach (var spawn in spawnsToDraw)
-            {
-                oldCirclesDrawn++;
-            }
-
-            var endFinalDrawList = spawnsToDraw
-                .GroupBy(s => new { s.QuestName, PosKey = $"{s.Position.x:F1}_{s.Position.z:F1}" })
-                .Select(g => g.First());
 
             int circlesDrawn = 0;
-            ClearCircle(); 
-            foreach (var spawn in endFinalDrawList)
+            Debug.Log(LogPrefix + $"尝试绘制 {_areaManager.CurrentQuestLocations.Count} 个标记...");
+            foreach (var spawn in _areaManager.CurrentQuestLocations) // 使用管理器提供的列表
             {
                 DrawQuestMarker(spawn.Position, spawn.Radius, spawn.QuestName);
                 circlesDrawn++;
             }
-            
             Debug.Log(LogPrefix + $"绘制了 {circlesDrawn} 个圆圈。");
-            
-            
         }
-
+        
+        
         private void DrawQuestMarker(Vector3 position, float radius, string questName)
         {
             Debug.Log(LogPrefix + $"正在为任务 '{questName}' 在 {position} 处绘制半径为 {radius} 的标记。");
@@ -267,17 +142,18 @@ namespace ShowQuestsAreaOnMap
         private void BeginDraw()
         {
             if (_mapActive) return;
-            Debug.Log(LogPrefix + "地图已打开，开始绘制...");
-            ClearCircle();
+            Debug.Log(LogPrefix + "地图已打开。更新位置并绘制...");
             _mapActive = true;
-            ScanQuestObjectives();
+            
+            _areaManager?.UpdateQuestLocations();
+            DrawCircles();
         }
 
         private void EndDraw()
         {
             if (_mapActive)
             {
-                Debug.Log(LogPrefix + "地图已关闭，清理圆圈...");
+                Debug.Log(LogPrefix + "地图已关闭。清理圆圈...");
                 _mapActive = false;
                 ClearCircle();
             }
@@ -285,31 +161,32 @@ namespace ShowQuestsAreaOnMap
         
         private void OnEnable()
         {
-            Debug.Log(LogPrefix + "Mod 已启用。");
-            
+            Debug.Log(LogPrefix + "Mod 已启用。应用补丁...");
             try
             {
+                if (_areaManager == null) {
+                    _areaManager = gameObject.AddComponent<QuestsAreaManager>();
+                    Debug.LogWarning(LogPrefix + "管理器在 OnEnable 时为 null，已创建。");
+                }
                 QuestSpawnPatcher.ApplyPatches(_harmony);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(LogPrefix + $"应用补丁时出错: {e.Message}");
-            }
-            
+            } catch (Exception e) { Debug.LogError(LogPrefix + $"应用补丁时出错: {e.Message}"); }
+
             View.OnActiveViewChanged += OnActiveViewChanged;
+            
         }
 
         private void OnDisable()
         {
-            Debug.Log(LogPrefix + "Mod 已禁用。");
+            Debug.Log(LogPrefix + "Mod 已禁用。卸载补丁并清理...");
             View.OnActiveViewChanged -= OnActiveViewChanged;
-            
+
             EndDraw(); 
-            
+
             _harmony?.UnpatchAll(_harmony.Id);
+
             Debug.Log(LogPrefix + "Harmony 补丁已卸载。");
         }
-
+        
         private void OnActiveViewChanged()
         {
             if (IsMapOpen())
@@ -334,25 +211,5 @@ namespace ShowQuestsAreaOnMap
             return false;
         }
         
-        private MapElementForTask GetMapElementFromTask(Task task)
-        {
-            Type taskType = task.GetType();
-            FieldInfo mapElementField;
-
-            if (_mapElementFieldCache.TryGetValue(taskType, out mapElementField))
-            {
-                if (mapElementField == null) return null;
-                try { return (MapElementForTask)mapElementField.GetValue(task); }
-                catch (Exception ex) { Debug.LogError($"{LogPrefix} GetValue failed for {taskType.Name}.mapElement: {ex.Message}"); return null;}
-            }
-            
-            mapElementField = taskType.GetField("mapElement", BindingFlags.NonPublic | BindingFlags.Instance);
-            _mapElementFieldCache[taskType] = mapElementField;
-            
-            if (mapElementField == null) return null;
-
-            try { return (MapElementForTask)mapElementField.GetValue(task); }
-            catch (Exception ex) { Debug.LogError($"{LogPrefix} GetValue failed for {taskType.Name}.mapElement: {ex.Message}"); return null;}
-        }
     }
 }

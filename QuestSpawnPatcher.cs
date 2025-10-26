@@ -30,7 +30,7 @@ namespace ShowQuestsAreaOnMap
         private static PropertyInfo _spawnPrefabTaskTaskProperty;
         public static FieldInfo TaskEventEmitterEventKeyField { get; private set; }
         
-        private static SpawnPrefabForTask _currentlySpawningPrefabTask = null;
+        private static SpawnPrefabForTask _currentlySpawningPrefabTask;
         
         public static void ApplyPatches(Harmony harmony)
         {
@@ -90,8 +90,8 @@ namespace ShowQuestsAreaOnMap
             
             try
             {
-                var originalInstantiate = AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Instantiate),
-                    new System.Type[] { typeof(GameObject), typeof(Vector3), typeof(Quaternion) });
+                var originalInstantiate = AccessTools.Method(typeof(Object), nameof(Object.Instantiate),
+                    new [] { typeof(GameObject), typeof(Vector3), typeof(Quaternion) });
                 var postfixInstantiate = new HarmonyMethod(typeof(QuestSpawnPatcher), nameof(OnInstantiate_Postfix));
                 harmony.Patch(originalInstantiate, postfix: postfixInstantiate);
                 Debug.Log(LogPrefix + "成功修补 Object.Instantiate (Postfix)");
@@ -181,7 +181,7 @@ namespace ShowQuestsAreaOnMap
            _currentlySpawningPrefabTask = __instance;
        }
        
-       private static void OnInstantiate_Postfix(UnityEngine.Object __result, Vector3 position)
+       private static void OnInstantiate_Postfix(Object __result, Vector3 position)
        {
            if (_currentlySpawningPrefabTask != null && __result != null && __result is GameObject spawnedGameObject) 
            {
