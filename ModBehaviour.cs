@@ -46,7 +46,7 @@ namespace ShowQuestsAreaOnMap
             {
                 if (circle != null)
                 {
-                    UnityEngine.Object.Destroy(circle);
+                    Destroy(circle);
                 }
             }
             _questCircleObjects.Clear();
@@ -54,20 +54,44 @@ namespace ShowQuestsAreaOnMap
         private void DrawCircles()
         {
             Debug.Log(LogPrefix + "DrawCircles 调用。");
-            ClearCircle(); // 清理旧圈
+            ClearCircle(); 
 
             if (_areaManager == null || _areaManager.CurrentQuestLocations == null)
             {
                 Debug.LogError(LogPrefix + "区域管理器或其位置列表为 null！无法绘制。");
                 return;
             }
-
+            string playerSubSceneID = LevelManager.GetCurrentLevelInfo().activeSubSceneID;
+            Debug.Log(LogPrefix + $"Player SubSceneID: '{playerSubSceneID ?? "null"}'");
+            
             int circlesDrawn = 0;
             Debug.Log(LogPrefix + $"尝试绘制 {_areaManager.CurrentQuestLocations.Count} 个标记...");
-            foreach (var spawn in _areaManager.CurrentQuestLocations) // 使用管理器提供的列表
+            foreach (var spawn in _areaManager.CurrentQuestLocations) 
             {
-                DrawQuestMarker(spawn.Position, spawn.Radius, spawn.QuestName);
-                circlesDrawn++;
+                bool shouldDraw = false;
+                string targetSubScene = spawn.TargetSubSceneID;
+                bool targetHasSubScene = targetSubScene!= null && !string.IsNullOrEmpty(targetSubScene) && !targetSubScene.Equals("Default", StringComparison.OrdinalIgnoreCase);
+
+                if (targetHasSubScene) 
+                {
+                    shouldDraw = (targetSubScene == playerSubSceneID);
+                    Debug.Log(LogPrefix + $"...检查 '{spawn.QuestName}'. 目标: '{targetSubScene}'. 玩家: '{playerSubSceneID}'. 匹配特定子场景: {shouldDraw}");
+                }
+                else 
+                {
+                    shouldDraw = true; 
+                    Debug.Log(LogPrefix + $"...检查 '{spawn.QuestName}'. 目标: 未指定. 玩家: '{playerSubSceneID}'. 绘制全局标记: {shouldDraw}");
+                }
+                
+                if (shouldDraw)
+                {
+                    DrawQuestMarker(spawn.Position, spawn.Radius, spawn.QuestName);
+                    circlesDrawn++;
+                }
+                else
+                {
+                    Debug.Log(LogPrefix + $"跳过绘制 '{spawn.QuestName}' @ {spawn.Position}. 目标子场景: '{targetSubScene ?? "N/A"}', 玩家子场景: '{playerSubSceneID ?? "N/A"}'.");
+                }
             }
             Debug.Log(LogPrefix + $"绘制了 {circlesDrawn} 个圆圈。");
         }
