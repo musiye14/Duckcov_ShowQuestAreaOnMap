@@ -166,7 +166,7 @@ namespace ShowQuestsAreaOnMap
                             {
                                 foreach (MultiSceneLocation loc in mapElement.locations)
                                 {
-                                    if (loc.IsUnityNull() && loc.TryGetLocationPosition(out Vector3 pos))
+                                    if (!loc.IsUnityNull() && loc.TryGetLocationPosition(out Vector3 pos))
                                     {
                                         taskPosition = pos;
                                         subSceneId = loc.SceneID;
@@ -190,7 +190,7 @@ namespace ShowQuestsAreaOnMap
                             }
                         }
 
-                        if (!taskPosition.HasValue && task is QuestTask_TaskEvent eventTaskNoMapElement /* && mapElement == null */ )
+                        if (task is QuestTask_TaskEvent eventTaskNoMapElement)
                         {
                              #region Emitter Search Logic (不变)
                               if (QuestSpawnPatcher.TaskEventEmitterEventKeyField != null)
@@ -216,6 +216,32 @@ namespace ShowQuestsAreaOnMap
                                   }
                               } 
                               #endregion
+                        }
+
+                        if (task is QuestTask_ReachLocation ReachLocationTask)
+                        {
+                            // 通过反射获取 location 和 radius 字段
+                            var locationField = typeof(QuestTask_ReachLocation).GetField("location", BindingFlags.NonPublic | BindingFlags.Instance);
+                            var radiusField = typeof(QuestTask_ReachLocation).GetField("radius", BindingFlags.NonPublic | BindingFlags.Instance);
+
+                            if (locationField != null)
+                            {
+                                object locationObj = locationField.GetValue(ReachLocationTask);
+                                if (locationObj != null)
+                                {
+                                    MultiSceneLocation location = (MultiSceneLocation)locationObj;
+                                    if (location.TryGetLocationPosition(out Vector3 pos))
+                                    {
+                                        taskPosition = pos;
+                                        subSceneId = location.SceneID;
+
+                                        if (radiusField != null)
+                                        {
+                                            taskRadius = (float)radiusField.GetValue(ReachLocationTask);
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                     } catch (Exception e) { Debug.LogError(LogPrefix + $"扫描任务 '{task.GetType().Name}' ('{questName}') 时出错: {e.Message}"); }
