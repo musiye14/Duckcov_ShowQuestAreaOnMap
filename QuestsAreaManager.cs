@@ -146,17 +146,23 @@ namespace ShowQuestsAreaOnMap
 
             foreach (Quest quest in QuestManager.Instance.ActiveQuests)
             {
-                if (quest.RequireSceneInfo == null || quest.RequireSceneInfo.ID != currentMapId) continue;
+				/*
+					quest.RequireSceneInfo 这个为null还真不能断定不可以   
+					QuestTask_ReachLocation这个类型的任务有些会分开在两个地图，然后这时候主任务是没有RequireSceneInfo的，都在task里面存，比如Quest861 仓库和农场镇找伐木场
+				*/  
+
+                if (quest.RequireSceneInfo != null && quest.RequireSceneInfo.ID != currentMapId) continue;
 
                 foreach (var task in quest.Tasks)
                 {
                     if (task == null || task.IsFinished()) continue;
+					
 
                     float taskRadius = 10f;
                     Vector3? taskPosition = null;
                     string questName = quest.DisplayName;
                     string subSceneId = null;
-
+					Debug.Log(LogPrefix + "检查" + questName +"的task");
                     try
                     {
                         MapElementForTask mapElement = GetMapElementFromTask(task);
@@ -230,7 +236,8 @@ namespace ShowQuestsAreaOnMap
                                 if (locationObj != null)
                                 {
                                     MultiSceneLocation location = (MultiSceneLocation)locationObj;
-                                    if (location.TryGetLocationPosition(out Vector3 pos))
+                                    // 气笑了场景ID是Level_HiddenWarehouse_Main  任务要的ID是Level_HiddenWarehouse  同一个地方但是不同ID说是
+                                    if ((location.SceneID.Contains(currentMapId) || currentMapId.Contains(location.SceneID) || location.SceneID == currentMapId) && location.TryGetLocationPosition(out Vector3 pos))
                                     {
                                         taskPosition = pos;
                                         subSceneId = location.SceneID;
