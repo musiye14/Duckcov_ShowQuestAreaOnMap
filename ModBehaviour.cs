@@ -46,6 +46,7 @@ namespace ShowQuestsAreaOnMap
             {
                 if (circle != null)
                 {
+                    circle.SetActive(false);
                     Destroy(circle);
                 }
             }
@@ -166,6 +167,13 @@ namespace ShowQuestsAreaOnMap
         private void BeginDraw()
         {
             if (_mapActive) return;
+            
+            if (_areaManager == null || !_areaManager.IsSceneScanComplete)
+            {
+                Debug.LogWarning(LogPrefix + "地图已打开，但 _areaManager 为空或场景扫描未完成。推迟绘制。");
+                return; 
+            }
+            
             Debug.Log(LogPrefix + "地图已打开。更新位置并绘制...");
             _mapActive = true;
             

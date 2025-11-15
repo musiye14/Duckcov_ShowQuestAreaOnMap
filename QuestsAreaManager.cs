@@ -25,6 +25,9 @@ namespace ShowQuestsAreaOnMap
         
         public List<ActiveQuestSpawn> CurrentQuestLocations { get; private set; } = new List<ActiveQuestSpawn>();
 
+		// 确保地图已经扫描完成
+		public bool IsSceneScanComplete { get; private set; } = false;
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
@@ -44,9 +47,12 @@ namespace ShowQuestsAreaOnMap
              
              if (SceneManager.GetActiveScene().isLoaded)
              {
+				 IsSceneScanComplete = false;
                  PreScanSceneForTriggers();
+				 IsSceneScanComplete = true;
              } else {
                  _triggersScannedForCurrentScene = false; 
+				 IsSceneScanComplete = false;
              }
         }
 
@@ -58,6 +64,7 @@ namespace ShowQuestsAreaOnMap
             _cachedQuestTriggers.Clear();
             _mapElementFieldCache.Clear(); 
             CurrentQuestLocations.Clear(); 
+			IsSceneScanComplete = false;
         }
 
          private void OnDestroy() {
@@ -71,9 +78,11 @@ namespace ShowQuestsAreaOnMap
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
             Debug.Log(LogPrefix + $"场景 '{scene.name}' 已加载。重置扫描标记并执行预扫描...");
+			IsSceneScanComplete = false; 
             _triggersScannedForCurrentScene = false; 
             CurrentQuestLocations.Clear(); 
             PreScanSceneForTriggers();
+			IsSceneScanComplete = true;
         }
 
         private void PreScanSceneForTriggers()
