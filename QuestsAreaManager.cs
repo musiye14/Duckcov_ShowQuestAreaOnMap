@@ -156,11 +156,14 @@ namespace ShowQuestsAreaOnMap
             foreach (Quest quest in QuestManager.Instance.ActiveQuests)
             {
 				/*
-					quest.RequireSceneInfo 这个为null还真不能断定不可以   
+					quest.RequireSceneInfo 这个为null还真不能断定不可以
 					QuestTask_ReachLocation这个类型的任务有些会分开在两个地图，然后这时候主任务是没有RequireSceneInfo的，都在task里面存，比如Quest861 仓库和农场镇找伐木场
-				*/  
+				*/
 
-                if (quest.RequireSceneInfo != null && quest.RequireSceneInfo.ID != currentMapId) continue;
+                // ===== 修改：移除 Quest 级别的场景过滤 =====
+                // 原因：跨地图任务的 requireSceneID 可能只写了第一个场景，导致其他场景的 Task 无法显示
+                // 应该让每个 Task 根据自己的场景信息（MultiSceneLocation、SpawnPrefabForTask 等）决定是否显示
+                // if (quest.RequireSceneInfo != null && quest.RequireSceneInfo.ID != currentMapId) continue;
 
                 foreach (var task in quest.Tasks)
                 {
@@ -181,7 +184,13 @@ namespace ShowQuestsAreaOnMap
                             {
                                 foreach (MultiSceneLocation loc in mapElement.locations)
                                 {
-                                    if (!loc.IsUnityNull() && loc.TryGetLocationPosition(out Vector3 pos))
+                                    // ===== 修改：增加场景匹配检查 =====
+                                    // 只处理属于当前场景的位置
+                                    bool sceneMatches = loc.SceneID == currentMapId ||
+                                                       loc.SceneID.Contains(currentMapId) ||
+                                                       currentMapId.Contains(loc.SceneID);
+
+                                    if (!loc.IsUnityNull() && sceneMatches && loc.TryGetLocationPosition(out Vector3 pos))
                                     {
                                         taskPosition = pos;
                                         subSceneId = loc.SceneID;
@@ -207,30 +216,74 @@ namespace ShowQuestsAreaOnMap
 
                         if (task is QuestTask_TaskEvent eventTaskNoMapElement)
                         {
-                             #region Emitter Search Logic (不变)
-                              if (QuestSpawnPatcher.TaskEventEmitterEventKeyField != null)
-                              {
-                                  string targetKey = eventTaskNoMapElement.EventKey;
-                                  if(!string.IsNullOrEmpty(targetKey))
-                                  {
-                                      TaskEventEmitter[] allEmitters = UnityEngine.Object.FindObjectsOfType<TaskEventEmitter>();
-                                      foreach(var emitter in allEmitters)
-                                      {
-                                           if (emitter == null) continue;
-                                           try
-                                           {
-                                               string emitterKey = (string)QuestSpawnPatcher.TaskEventEmitterEventKeyField.GetValue(emitter);
-                                               if (emitterKey == targetKey)
-                                               {
-                                                   taskPosition = emitter.transform.position;
-                                                   subSceneId = null;
-                                                   break;
-                                               }
-                                           } catch { /* ignore */ }
-                                      }
-                                  }
-                              } 
-                              #endregion
+                            // ===== 新增：检查 SpawnPrefabForTask 组件（跨地图任务情况）=====
+                            // QuestTask_TaskEvent 在跨地图任务中会挂载 SpawnPrefabForTask 组件
+                            // 从 SpawnPrefabForTask.locations 中可以获取正确的场景 ID 和位置
+                            if (!taskPosition.HasValue)
+                            {
+                                var spawnPrefabComponent = task.GetComponent<SpawnPrefabForTask>();
+                                if (spawnPrefabComponent != null)
+                                {
+                                    try
+                                    {
+                                        // 反射获取 SpawnPrefabForTask 的 locations 字段
+                                        var locationsField = typeof(SpawnPrefabForTask).GetField("locations", BindingFlags.NonPublic | BindingFlags.Instance);
+                                        if (locationsField != null)
+                                        {
+                                            var locations = locationsField.GetValue(spawnPrefabComponent) as List<MultiSceneLocation>;
+                                            if (locations != null && locations.Count > 0)
+                                            {
+                                                foreach (var loc in locations)
+                                                {
+                                                    // 检查场景是否匹配
+                                                    bool sceneMatches = loc.SceneID == currentMapId ||
+                                                                       loc.SceneID.Contains(currentMapId) ||
+                                                                       currentMapId.Contains(loc.SceneID);
+
+                                                    if (!loc.IsUnityNull() && sceneMatches && loc.TryGetLocationPosition(out Vector3 pos))
+                                                    {
+                                                        taskPosition = pos;
+                                                        subSceneId = loc.SceneID;
+                                                        taskRadius = 10f; // SpawnPrefabForTask 使用默认半径
+                                                        Debug.Log(LogPrefix + $"[QuestTask_TaskEvent] 从 SpawnPrefabForTask 获取位置: {pos}, SceneID: {loc.SceneID}");
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.LogWarning(LogPrefix + $"反射 SpawnPrefabForTask.locations 失败: {ex.Message}");
+                                    }
+                                }
+                            }
+
+                            // ===== 原有逻辑：通过 TaskEventEmitter 查找位置 =====
+                            #region Emitter Search Logic
+                            if (!taskPosition.HasValue && QuestSpawnPatcher.TaskEventEmitterEventKeyField != null)
+                            {
+                                string targetKey = eventTaskNoMapElement.EventKey;
+                                if(!string.IsNullOrEmpty(targetKey))
+                                {
+                                    TaskEventEmitter[] allEmitters = UnityEngine.Object.FindObjectsOfType<TaskEventEmitter>();
+                                    foreach(var emitter in allEmitters)
+                                    {
+                                         if (emitter == null) continue;
+                                         try
+                                         {
+                                             string emitterKey = (string)QuestSpawnPatcher.TaskEventEmitterEventKeyField.GetValue(emitter);
+                                             if (emitterKey == targetKey)
+                                             {
+                                                 taskPosition = emitter.transform.position;
+                                                 subSceneId = null;
+                                                 break;
+                                             }
+                                         } catch { /* ignore */ }
+                                    }
+                                }
+                            }
+                            #endregion
                         }
 
                         if (task is QuestTask_ReachLocation ReachLocationTask)
